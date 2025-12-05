@@ -40,7 +40,7 @@ ask_mode() {
     local network_type=$1
     local mode=""
     while true; do
-        echo -e "${CYAN}Is $network_type interface TAGGED (trunk) or UNTAGGED (access)?${NC}"
+        echo -e "${CYAN}Is $network_type interface TAGGED (trunk) or UNTAGGED (access)?${NC}" >&2
         read -p "Enter [t]agged or [u]ntagged: " mode_input
         case $mode_input in
             [Tt]|tagged|TAGGED|trunk|TRUNK)
@@ -52,7 +52,7 @@ ask_mode() {
                 break
                 ;;
             *)
-                echo -e "${RED}   ❌ Invalid input. Please enter 't' for tagged or 'u' for untagged.${NC}"
+                echo -e "${RED}   ❌ Invalid input. Please enter 't' for tagged or 'u' for untagged.${NC}" >&2
                 ;;
         esac
     done
