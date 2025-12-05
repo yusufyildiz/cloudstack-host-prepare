@@ -147,9 +147,12 @@ restore_from_backup() {
 
     # Delete current connections
     log "Removing current connections..."
-    nmcli -t -f UUID,NAME connection show | grep -E "cloudbr|bond|vlan|rescue" | cut -d: -f1 | while read uuid; do
-        nmcli connection delete "$uuid" 2>/dev/null || true
-    done
+    connections_to_delete=$(nmcli -t -f UUID,NAME connection show | grep -E "cloudbr|bond|vlan|rescue" | cut -d: -f1 || true)
+    if [ -n "$connections_to_delete" ]; then
+        echo "$connections_to_delete" | while read -r uuid; do
+            [ -n "$uuid" ] && nmcli connection delete "$uuid" 2>/dev/null || true
+        done
+    fi
 
     # Restore connections
     log "Restoring connections..."
@@ -362,9 +365,15 @@ log "${YELLOW}Cleaning up old connections...${NC}"
 if [ "$DRY_RUN" = true ]; then
     echo -e "${CYAN}[DRY-RUN]${NC} Would delete existing cloudbr/bond/vlan connections"
 else
-    nmcli -t -f UUID,NAME connection show | grep -E "cloudbr|bond|vlan|rescue" | cut -d: -f1 | while read uuid; do
-        nmcli connection delete "$uuid" 2>/dev/null || true
-    done
+    # Get list of connections to delete (grep returns 1 if no match, so use || true)
+    connections_to_delete=$(nmcli -t -f UUID,NAME connection show | grep -E "cloudbr|bond|vlan|rescue" | cut -d: -f1 || true)
+
+    if [ -n "$connections_to_delete" ]; then
+        echo "$connections_to_delete" | while read -r uuid; do
+            [ -n "$uuid" ] && nmcli connection delete "$uuid" 2>/dev/null || true
+        done
+    fi
+
     for iface in $MY_BOND0_SLAVES $MY_BOND1_SLAVES; do
         nmcli connection delete "$iface" 2>/dev/null || true
     done
