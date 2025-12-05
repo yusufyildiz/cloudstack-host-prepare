@@ -1,42 +1,272 @@
-# 🚀 Automated CloudStack & Linstor Network Topology
+# Automated CloudStack & Linstor Network Topology
 
 This repository contains automation scripts to standardize the network configuration of KVM hosts running Apache CloudStack and Linstor SDS. It enforces a high-performance, segmented network topology with safety rollback mechanisms.
 
-## 🗺️ Network Topology
+## Network Topology
 
 We utilize a split-traffic architecture to isolate Storage I/O from Management and VM traffic.
 
-### 1. Storage Network (`bond0`)
-* **Physical:** Dedicated Bond (`bond0`).
-* **Switch Configuration:** Access Port (Untagged VLAN 40).
-* **Host Configuration:** Untagged Bridge (`cloudbr0`).
-* **MTU:** **9000 (Jumbo Frames)** for maximum Linstor/DRBD performance.
-* **Topology:** `Physical Interface` -> `bond0` -> `cloudbr0` (IP Here).
+### ASCII Network Diagram
 
-### 2. Management & Public Network (`bond1`)
-* **Physical:** Shared Trunk Bond (`bond1`).
-* **Switch Configuration:** Trunk Port (Tagged VLANs 41, 100, Guest VLANs).
-* **MTU:** **1500** (Standard).
-* **Sub-Networks:**
-    * **Management:** VLAN 41 -> `bond1.41` -> `cloudbr1` (Host IP Here).
-    * **Public:** VLAN 100 -> `bond1.100` -> `cloudbr100` (No Host IP, used by System VMs).
-    * **Guest:** Raw Trunk (`bond1`) passed to CloudStack for dynamic VLAN creation.
+```
+                                    KVM HOST
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │                                                                              │
+ │   STORAGE NETWORK (MTU 9000)              MANAGEMENT/PUBLIC NETWORK (MTU 1500)
+ │   ══════════════════════════              ════════════════════════════════════
+ │                                                                              │
+ │   ┌─────────┐  ┌─────────┐                ┌─────────┐  ┌─────────┐           │
+ │   │ ens2f0  │  │ ens2f1  │                │ ens1f0  │  │ ens1f1  │           │
+ │   └────┬────┘  └────┬────┘                └────┬────┘  └────┬────┘           │
+ │        │            │                          │            │                │
+ │        └─────┬──────┘                          └─────┬──────┘                │
+ │              │                                       │                       │
+ │        ┌─────┴─────┐                           ┌─────┴─────┐                 │
+ │        │   bond0   │                           │   bond1   │ ◄── LACP 802.3ad
+ │        │ (802.3ad) │                           │ (802.3ad) │                 │
+ │        └─────┬─────┘                           └─────┬─────┘                 │
+ │              │                                       │                       │
+ │              │                          ┌────────────┼────────────┐          │
+ │              │                          │            │            │          │
+ │              │                    ┌─────┴─────┐ ┌────┴────┐ ┌─────┴─────┐    │
+ │              │                    │ bond1.41  │ │bond1.100│ │  (trunk)  │    │
+ │              │                    │  VLAN 41  │ │ VLAN 100│ │Guest VLANs│    │
+ │              │                    └─────┬─────┘ └────┬────┘ └───────────┘    │
+ │              │                          │            │                       │
+ │        ┌─────┴─────┐              ┌─────┴─────┐ ┌────┴─────┐                 │
+ │        │ cloudbr0  │              │ cloudbr1  │ │cloudbr100│                 │
+ │        │ (bridge)  │              │ (bridge)  │ │ (bridge) │                 │
+ │        └─────┬─────┘              └─────┬─────┘ └────┬─────┘                 │
+ │              │                          │            │                       │
+ │       ┌──────┴──────┐            ┌──────┴──────┐     │                       │
+ │       │ 10.1.40.x   │            │ 10.1.41.x   │     │ (No IP)               │
+ │       │ Storage IP  │            │ Management  │     │ System VMs            │
+ │       │ Linstor/DRBD│            │ SSH Access  │     │ Public Traffic        │
+ │       └─────────────┘            └─────────────┘     └───────────────────────│
+ │                                                                              │
+ └──────────────────────────────────────────────────────────────────────────────┘
+                 │                          │                    │
+                 ▼                          ▼                    ▼
+ ┌───────────────────────┐    ┌───────────────────────┐    ┌───────────────────┐
+ │    STORAGE SWITCH     │    │  MANAGEMENT SWITCH    │    │   PUBLIC SWITCH   │
+ │   Access Port (VLAN40)│    │  Trunk Port (Tagged)  │    │  Trunk Port       │
+ │   Untagged Traffic    │    │  VLAN 41, 100, Guests │    │  VLAN 100, Guests │
+ └───────────────────────┘    └───────────────────────┘    └───────────────────┘
+```
 
-## 📂 Repository Contents
+### Network Details
+
+| Network | Bond | Bridge | VLAN | MTU | Purpose |
+|---------|------|--------|------|-----|---------|
+| Storage | bond0 | cloudbr0 | 40 (Untagged) | 9000 | Linstor/DRBD replication |
+| Management | bond1 | cloudbr1 | 41 (Tagged) | 1500 | SSH, CloudStack Agent |
+| Public | bond1 | cloudbr100 | 100 (Tagged) | 1500 | System VMs, Public IPs |
+| Guest | bond1 | - | Dynamic | 1500 | VM traffic (CloudStack managed) |
+
+## Repository Contents
 
 | File | Description |
-| :--- | :--- |
+|:-----|:------------|
 | `01_discovery.sh` | Interactive script. Scans the host, asks for bond mappings, and generates `server.conf`. |
 | `02_deploy.sh` | The main executor. Reads `server.conf`, configures `nmcli`, updates Agent settings, and performs connectivity tests with rollback. |
 | `server.conf` | Configuration file generated by the discovery script. Contains IP/Port details specific to the host. |
 
-## 🛠️ Usage Guide
+## Prerequisites
 
-**WARNING:** These scripts modify network interfaces. SSH connectivity will be interrupted during execution. Always use `nohup`.
+Before running the scripts, ensure:
 
-### Step 1: Discovery
-Run the discovery script on the target host to generate the configuration.
+- **OS:** RHEL/CentOS/Rocky Linux 8+ or compatible
+- **Packages:** NetworkManager, nmcli
+- **Access:** Root privileges
+- **Network:** Physical interfaces identified and cabled
+- **Switch:** VLANs configured (40, 41, 100) with proper trunk/access ports
 
 ```bash
-chmod +x 01_discovery.sh
+# Verify NetworkManager is running
+systemctl status NetworkManager
+
+# List available interfaces
+ip link show
+```
+
+## Usage Guide
+
+> **WARNING:** These scripts modify network interfaces. SSH connectivity will be interrupted during execution. Always use `nohup` or run from console/IPMI.
+
+### Step 1: Clone Repository
+
+```bash
+git clone https://github.com/yusufyildiz/cloudstack-host-prepare.git
+cd cloudstack-host-prepare
+chmod +x *.sh
+```
+
+### Step 2: Run Discovery
+
+Run the discovery script to scan interfaces and generate configuration.
+
+```bash
 ./01_discovery.sh
+```
+
+The script will:
+1. List all available network interfaces
+2. Ask which interface carries **Storage** traffic
+3. Ask which interface carries **Management** traffic
+4. Auto-detect bond slaves (if bonding exists)
+5. Auto-detect IP addresses based on subnet patterns
+6. Generate `server.conf`
+
+**Example Output:**
+```
+=================================================
+   INTERACTIVE NETWORK DISCOVERY - kvm-host-01
+=================================================
+
+--- Available Network Interfaces ---
+bond0  bond1  ens1f0  ens1f1  ens2f0  ens2f1
+
+Which interface carries STORAGE traffic (Linstor/DRBD)?
+Interface Name (e.g., bond0, ens2f0): bond0
+   ✅ Selected: bond0
+
+Which interface carries MANAGEMENT/PUBLIC traffic?
+Interface Name (e.g., bond1, ens1f0): bond1
+   ✅ Selected: bond1
+
+✅ SUCCESS: Configuration file 'server.conf' created.
+```
+
+### Step 3: Verify Configuration
+
+Open and verify the generated configuration file:
+
+```bash
+cat server.conf
+```
+
+**Example `server.conf`:**
+```bash
+# SERVER CONFIGURATION: kvm-host-01
+MY_HOSTNAME="kvm-host-01"
+MY_MGMT_IP="10.1.41.10/24"      # Management IP (VLAN 41)
+MY_STRG_IP="10.1.40.10/24"      # Storage IP (VLAN 40)
+
+MY_BOND0_SLAVES="ens2f0 ens2f1"  # Storage ports
+MY_BOND1_SLAVES="ens1f0 ens1f1"  # Management ports
+
+GATEWAY="10.1.41.1"
+DNS="8.8.8.8"
+```
+
+> **IMPORTANT:** If any value shows `MANUAL_INPUT_REQUIRED`, edit the file and fill in the correct values before proceeding.
+
+### Step 4: Deploy Network Configuration
+
+Run the deployment script using `nohup` to prevent SSH disconnection from killing the process:
+
+```bash
+nohup ./02_deploy.sh > deploy.log 2>&1 &
+tail -f deploy.log
+```
+
+**Or from console/IPMI:**
+```bash
+./02_deploy.sh
+```
+
+The script will:
+1. Validate configuration file
+2. Clean up existing network connections
+3. Create bond0 with jumbo frames (MTU 9000)
+4. Create cloudbr0 bridge for storage
+5. Create bond1 with standard MTU
+6. Create VLAN interfaces (41, 100)
+7. Create cloudbr1 and cloudbr100 bridges
+8. Update CloudStack agent properties
+9. Activate all connections
+10. Verify gateway connectivity
+11. Restart CloudStack agent (on success) or rollback (on failure)
+
+### Step 5: Verify Deployment
+
+After successful deployment, verify the network:
+
+```bash
+# Check bridge and bond status
+ip -br addr show | grep -E "bond|cloudbr"
+
+# Verify bonding
+cat /proc/net/bonding/bond0
+cat /proc/net/bonding/bond1
+
+# Test connectivity
+ping -c 3 10.1.41.1   # Gateway
+ping -c 3 10.1.40.1   # Storage gateway (if exists)
+
+# Check CloudStack agent
+systemctl status cloudstack-agent
+```
+
+**Expected Output:**
+```
+bond0            UP
+bond1            UP
+cloudbr0         UP             10.1.40.10/24
+cloudbr1         UP             10.1.41.10/24
+cloudbr100       UP
+```
+
+## Rollback Mechanism
+
+If the deployment fails connectivity tests, the script automatically:
+
+1. Deletes potentially broken bridges (cloudbr1)
+2. Creates an emergency VLAN interface (`rescue-mgmt`)
+3. Restores SSH access via management IP
+
+**Manual Recovery (if needed):**
+```bash
+# If completely locked out, from console:
+nmcli connection delete cloudbr1
+nmcli connection delete cloudbr0
+nmcli connection add type vlan ifname bond1.41 dev bond1 id 41 \
+    con-name "rescue-mgmt" \
+    ipv4.method manual ipv4.addresses 10.1.41.10/24 \
+    ipv4.gateway 10.1.41.1
+
+nmcli connection up rescue-mgmt
+```
+
+## Troubleshooting
+
+### Problem: Script fails with "MANUAL_INPUT_REQUIRED"
+**Solution:** Edit `server.conf` and fill in the missing IP addresses.
+
+### Problem: Bond slaves not detected
+**Solution:** Verify bonding is configured in `/sys/class/net/bondX/bonding/slaves` or manually specify interfaces in `server.conf`.
+
+### Problem: SSH disconnected during deployment
+**Solution:** Wait 2-3 minutes for rollback. If still unreachable, access via IPMI/console and run recovery commands.
+
+### Problem: CloudStack agent fails to start
+**Solution:** Check agent properties:
+```bash
+cat /etc/cloudstack/agent/agent.properties | grep -E "private|public|guest"
+```
+
+### Problem: VLAN traffic not passing
+**Solution:** Verify switch configuration - ensure trunk ports allow VLANs 41 and 100.
+
+## Log Files
+
+- **Deployment Log:** `/var/log/network_deploy.log`
+- **CloudStack Agent:** `/var/log/cloudstack/agent/agent.log`
+
+## License
+
+MIT License - See LICENSE file for details.
+
+## Author
+
+Yusuf Yildiz
