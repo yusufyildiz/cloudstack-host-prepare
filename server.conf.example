@@ -1,0 +1,30 @@
+# ==========================================
+# SERVER CONFIGURATION: kvm-host-01
+# Source: bond0 (Storage) / bond1 (Mgmt)
+# Generated: Thu Dec 05 10:00:00 UTC 2024
+# ==========================================
+
+# --- HOST INFORMATION ---
+MY_HOSTNAME="kvm-host-01"
+MY_MGMT_IP="10.1.41.10/24"      # Management IP (VLAN 41)
+MY_STRG_IP="10.1.40.10/24"      # Storage IP (VLAN 40)
+
+# --- PHYSICAL PORTS ---
+# Storage Network (Target: bond0, MTU 9000)
+MY_BOND0_SLAVES="ens2f0 ens2f1"
+
+# Management/Public Network (Target: bond1, MTU 1500)
+MY_BOND1_SLAVES="ens1f0 ens1f1"
+
+# --- GLOBAL SETTINGS ---
+GATEWAY="10.1.41.1"
+DNS="8.8.8.8"
+
+# --- VLAN CONFIGURATION ---
+VLAN_MGMT="41"
+VLAN_PUBLIC="100"
+VLAN_STORAGE="40"
+
+# --- MTU CONFIGURATION ---
+MTU_STD="1500"
+MTU_JUMBO="9000"
