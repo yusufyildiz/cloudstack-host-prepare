@@ -5,6 +5,14 @@
 # USAGE: nohup ./02_deploy.sh &
 # ==============================================================================
 
+set -euo pipefail
+
+# Root check
+if [[ $EUID -ne 0 ]]; then
+   echo "ERROR: This script must be run as root"
+   exit 1
+fi
+
 CONFIG_FILE="server.conf"
 LOG_FILE="/var/log/network_deploy.log"
 AGENT_PROP="/etc/cloudstack/agent/agent.properties"
@@ -66,8 +74,8 @@ hostnamectl set-hostname $MY_HOSTNAME
 
 # CLEANUP
 echo "Cleaning up old connections..."
-nmcli connection show | grep -E "cloudbr|bond|vlan|rescue" | awk '{print $2}' | while read uuid; do
-  nmcli connection delete $uuid 2>/dev/null
+nmcli -t -f UUID,NAME connection show | grep -E "cloudbr|bond|vlan|rescue" | cut -d: -f1 | while read uuid; do
+  nmcli connection delete "$uuid" 2>/dev/null || true
 done
 for iface in $MY_BOND0_SLAVES $MY_BOND1_SLAVES; do
   nmcli connection delete "$iface" 2>/dev/null
@@ -150,10 +158,13 @@ fi
 # 3. ACTIVATION & VERIFICATION
 # ==========================================
 echo "--- Activating Connections ---"
-# Slaves first
-for slave in $MY_BOND0_SLAVES $MY_BOND1_SLAVES; do
-    nmcli connection up "bond0-slave-$slave" 2>/dev/null
-    nmcli connection up "bond1-slave-$slave" 2>/dev/null
+# Activate bond0 slaves
+for slave in $MY_BOND0_SLAVES; do
+    nmcli connection up "bond0-slave-$slave" 2>/dev/null || true
+done
+# Activate bond1 slaves
+for slave in $MY_BOND1_SLAVES; do
+    nmcli connection up "bond1-slave-$slave" 2>/dev/null || true
 done
 
 nmcli connection up bond0
