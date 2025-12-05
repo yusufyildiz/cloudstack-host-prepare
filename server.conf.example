@@ -6,8 +6,8 @@
 
 # --- HOST INFORMATION ---
 MY_HOSTNAME="kvm-host-01"
-MY_MGMT_IP="10.1.41.10/24"      # Management IP (VLAN 41)
-MY_STRG_IP="10.1.40.10/24"      # Storage IP (VLAN 40)
+MY_MGMT_IP="10.1.41.10/24"
+MY_STRG_IP="10.1.40.10/24"
 
 # --- PHYSICAL PORTS ---
 # Storage Network (Target: bond0, MTU 9000)
@@ -16,14 +16,20 @@ MY_BOND0_SLAVES="ens2f0 ens2f1"
 # Management/Public Network (Target: bond1, MTU 1500)
 MY_BOND1_SLAVES="ens1f0 ens1f1"
 
+# --- SWITCH PORT MODE ---
+# Options: "tagged" (trunk) or "untagged" (access)
+STRG_MODE="untagged"
+MGMT_MODE="tagged"
+
+# --- VLAN CONFIGURATION ---
+# Leave empty if untagged/access mode
+VLAN_STORAGE=""
+VLAN_MGMT="41"
+VLAN_PUBLIC="100"
+
 # --- GLOBAL SETTINGS ---
 GATEWAY="10.1.41.1"
 DNS="8.8.8.8"
-
-# --- VLAN CONFIGURATION ---
-VLAN_MGMT="41"
-VLAN_PUBLIC="100"
-VLAN_STORAGE="40"
 
 # --- MTU CONFIGURATION ---
 MTU_STD="1500"
