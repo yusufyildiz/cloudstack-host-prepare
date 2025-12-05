@@ -1,6 +1,6 @@
 # Automated CloudStack Network Topology
 
-This repository contains automation scripts to standardize the network configuration of KVM hosts running Apache CloudStack and Linstor SDS. It enforces a high-performance, segmented network topology with safety rollback mechanisms.
+This repository contains automation scripts to standardize the network configuration of KVM hosts running Apache CloudStack. It enforces a high-performance, segmented network topology with safety rollback mechanisms.
 
 ## Network Topology
 
