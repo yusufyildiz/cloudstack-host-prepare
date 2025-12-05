@@ -113,10 +113,13 @@ Run the discovery script to scan interfaces and generate configuration.
 The script will:
 1. List all available network interfaces
 2. Ask which interface carries **Storage** traffic
-3. Ask which interface carries **Management** traffic
-4. Auto-detect bond slaves (if bonding exists)
-5. Auto-detect IP addresses based on subnet patterns
-6. Generate `server.conf`
+3. Ask if storage is **Tagged (trunk)** or **Untagged (access)**
+4. Ask which interface carries **Management** traffic
+5. Ask if management is **Tagged (trunk)** or **Untagged (access)**
+6. Ask for VLAN IDs (if tagged mode selected)
+7. Ask for Gateway and DNS settings
+8. Auto-detect bond slaves (if bonding exists)
+9. Generate `server.conf`
 
 **Example Output:**
 ```
@@ -127,15 +130,37 @@ The script will:
 --- Available Network Interfaces ---
 bond0  bond1  ens1f0  ens1f1  ens2f0  ens2f1
 
+=== STORAGE NETWORK CONFIGURATION ===
 Which interface carries STORAGE traffic (Linstor/DRBD)?
 Interface Name (e.g., bond0, ens2f0): bond0
    ✅ Selected: bond0
+Is STORAGE interface TAGGED (trunk) or UNTAGGED (access)?
+Enter [t]agged or [u]ntagged: u
+   ✅ Mode: untagged
 
+=== MANAGEMENT/PUBLIC NETWORK CONFIGURATION ===
 Which interface carries MANAGEMENT/PUBLIC traffic?
 Interface Name (e.g., bond1, ens1f0): bond1
    ✅ Selected: bond1
+Is MANAGEMENT interface TAGGED (trunk) or UNTAGGED (access)?
+Enter [t]agged or [u]ntagged: t
+   ✅ Mode: tagged
+Enter MANAGEMENT VLAN ID (e.g., 41): 41
+   ✅ Management VLAN: 41
+Enter PUBLIC VLAN ID (e.g., 100): 100
+   ✅ Public VLAN: 100
+
+=== NETWORK SETTINGS ===
+Enter Gateway IP [10.1.41.1]:
+Enter DNS Server [8.8.8.8]:
 
 ✅ SUCCESS: Configuration file 'server.conf' created.
+---------------------------------------------------------
+Storage:    10.1.40.10/24 (Mode: untagged, VLAN: N/A)
+Management: 10.1.41.10/24 (Mode: tagged, VLAN: 41)
+Public:     VLAN 100
+Gateway:    10.1.41.1 | DNS: 8.8.8.8
+---------------------------------------------------------
 ```
 
 ### Step 3: Verify Configuration
@@ -150,11 +175,21 @@ cat server.conf
 ```bash
 # SERVER CONFIGURATION: kvm-host-01
 MY_HOSTNAME="kvm-host-01"
-MY_MGMT_IP="10.1.41.10/24"      # Management IP (VLAN 41)
-MY_STRG_IP="10.1.40.10/24"      # Storage IP (VLAN 40)
+MY_MGMT_IP="10.1.41.10/24"
+MY_STRG_IP="10.1.40.10/24"
 
+# Physical ports
 MY_BOND0_SLAVES="ens2f0 ens2f1"  # Storage ports
 MY_BOND1_SLAVES="ens1f0 ens1f1"  # Management ports
+
+# Switch port mode: "tagged" (trunk) or "untagged" (access)
+STRG_MODE="untagged"
+MGMT_MODE="tagged"
+
+# VLAN IDs (leave empty if untagged)
+VLAN_STORAGE=""
+VLAN_MGMT="41"
+VLAN_PUBLIC="100"
 
 GATEWAY="10.1.41.1"
 DNS="8.8.8.8"
